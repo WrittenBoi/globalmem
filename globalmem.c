@@ -8,6 +8,9 @@
 #define GLOBALMEMSIZE		0x1000
 #define GLOBALMEMNAME		"globalmem"
 
+#define GLOBALMEMMAGIC		'g'
+#define MEM_CLEAR		_IO(GLOBALMEMMAGIC, 0)
+
 #define GM_PRT_INFO(fmt, args...) \
 do { \
 	printk(KERN_INFO "[%s](%s[%d]): " fmt, GLOBALMEMNAME, \
@@ -113,12 +116,32 @@ static ssize_t gm_write(struct file *filp, const char __user *buf, size_t size,
 	return ret;
 }
 
+static long gm_ioctl(struct file *filp, unsigned int cmd,
+		unsigned long arg)
+{
+	struct gm_device *dev = filp->private_data;
+	int ret = 0;
+
+	switch (cmd) {
+	case MEM_CLEAR:
+		memset(dev->mem, 0, GLOBALMEMSIZE);
+		break;
+	default:
+		GM_PRT_ERR("Unsupport command!\n");
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
 struct file_operations gm_fops = {
 	.owner = THIS_MODULE,
 	.read = gm_read,
 	.write = gm_write,
 	.open = gm_open,
 	.release = gm_release,
+	.unlocked_ioctl = gm_ioctl,
 };
 
 static int gm_setup_cdev(struct gm_device *dev, int index)
