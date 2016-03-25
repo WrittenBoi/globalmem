@@ -7,6 +7,7 @@
 
 #define GLOBALMEMSIZE		0x1000
 #define GLOBALMEMNAME		"globalmem"
+#define GLOBALMEMDEVNUM		8
 
 #define GLOBALMEMMAGIC		'g'
 #define MEM_CLEAR		_IO(GLOBALMEMMAGIC, 0)
@@ -29,8 +30,7 @@ do { \
 			__func__, __LINE__, ## args); \
 } while (0)
 
-
-static int globalmem_major = 0;
+static int globalmem_major;
 
 struct gm_device {
 	struct cdev cdev;
@@ -162,22 +162,25 @@ static int gm_setup_cdev(struct gm_device *dev, int index)
 static int __init gm_init(void)
 {
 	dev_t devno;
-	int ret;
+	int ret, cnt;
 
-	ret = alloc_chrdev_region(&devno, 0, 1, GLOBALMEMNAME);
+	ret = alloc_chrdev_region(&devno, 0, GLOBALMEMDEVNUM, GLOBALMEMNAME);
 	if (ret)
 		return ret;
 	globalmem_major = MAJOR(devno);
 
-	gm_dev = kzalloc(sizeof(struct gm_device), GFP_KERNEL);
+	gm_dev = kzalloc(sizeof(struct gm_device) * GLOBALMEMDEVNUM,
+				GFP_KERNEL);
 	if (!gm_dev){
 		ret = -ENOMEM;
 		goto fail0;
 	}
 
-	ret = gm_setup_cdev(gm_dev, 0);
-	if (ret)
-		goto fail1;
+	for (cnt = 0; cnt < GLOBALMEMDEVNUM; cnt++) {
+		ret = gm_setup_cdev(gm_dev + cnt, cnt);
+		if (ret)
+			goto fail1;
+	}
 	GM_PRT_INFO("Install OK!\n");
 
 	return 0;
@@ -185,16 +188,20 @@ fail1:
 	kfree(gm_dev);
 	gm_dev = NULL;
 fail0:
-	unregister_chrdev_region(devno, 1);
+	unregister_chrdev_region(devno, GLOBALMEMDEVNUM);
 	return ret;
 }
 
 static void __exit gm_exit(void)
 {
-	cdev_del(&gm_dev->cdev);
+	int cnt;
+
+	for (cnt = 0; cnt < GLOBALMEMDEVNUM; cnt++) {
+		cdev_del(&gm_dev[cnt].cdev);
+	}
 	kfree(gm_dev);
 	gm_dev = NULL;
-	unregister_chrdev_region(MKDEV(globalmem_major, 0), 1);
+	unregister_chrdev_region(MKDEV(globalmem_major, 0), GLOBALMEMDEVNUM);
 	GM_PRT_INFO("Uninstall OK!\n");
 }
 
