@@ -172,16 +172,19 @@ static int __init gm_init(void)
 	gm_dev = kzalloc(sizeof(struct gm_device), GFP_KERNEL);
 	if (!gm_dev){
 		ret = -ENOMEM;
-		goto fail;
+		goto fail0;
 	}
 
 	ret = gm_setup_cdev(gm_dev, 0);
 	if (ret)
-		goto fail;
+		goto fail1;
 	GM_PRT_INFO("Install OK!\n");
 
 	return 0;
-fail:
+fail1:
+	kfree(gm_dev);
+	gm_dev = NULL;
+fail0:
 	unregister_chrdev_region(devno, 1);
 	return ret;
 }
@@ -190,6 +193,7 @@ static void __exit gm_exit(void)
 {
 	cdev_del(&gm_dev->cdev);
 	kfree(gm_dev);
+	gm_dev = NULL;
 	unregister_chrdev_region(MKDEV(globalmem_major, 0), 1);
 	GM_PRT_INFO("Uninstall OK!\n");
 }
