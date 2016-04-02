@@ -4,6 +4,7 @@
 #include <linux/cdev.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/mutex.h>
 
 #define GLOBALMEMSIZE		0x1000
 #define GLOBALMEMNAME		"globalmem"
@@ -35,6 +36,7 @@ static int globalmem_major;
 struct gm_device {
 	struct cdev cdev;
 	unsigned mem[GLOBALMEMSIZE];
+	struct mutex mutex;
 } *gm_dev;
 
 
@@ -68,6 +70,7 @@ static ssize_t gm_read(struct file *filp, char __user *buf, size_t size,
 	if (count > GLOBALMEMSIZE - p)
 		count = GLOBALMEMSIZE - p;
 
+	mutex_lock(&dev->mutex);
 	if(copy_to_user(buf, dev->mem + p, count)) {
 		/*
 		GM_PRT_ERR("Copy to user error!"
@@ -75,12 +78,13 @@ static ssize_t gm_read(struct file *filp, char __user *buf, size_t size,
 				(unsigned)(dev->mem + p), (unsigned)buf,
 				count);
 		*/
-		return -EFAULT;
+		ret = -EFAULT;
 	} else {
 		*posp += count;
 		ret = count;
 		GM_PRT_INFO("Read %d bytes from %lu.\n", count, p);
 	}
+	mutex_unlock(&dev->mutex);
 
 	return ret;
 }
@@ -99,6 +103,7 @@ static ssize_t gm_write(struct file *filp, const char __user *buf, size_t size,
 	if (count > GLOBALMEMSIZE - p)
 		count = GLOBALMEMSIZE - p;
 
+	mutex_lock(&dev->mutex);
 	if (copy_from_user(dev->mem + p, buf, count) < 0) {
 		/*
 		GM_PRT_ERR("Copy from user error!"
@@ -106,12 +111,13 @@ static ssize_t gm_write(struct file *filp, const char __user *buf, size_t size,
 				(unsigned)(buf), (unsigned)(dev->mem + p),
 				count);
 		*/
-		return -EFAULT;
+		ret = -EFAULT;
 	} else {
 		*posp += count;
 		ret = count;
 		GM_PRT_INFO("Write %d bytes to %lu.\n", count, p);
 	}
+	mutex_unlock(&dev->mutex);
 
 	return ret;
 }
@@ -124,7 +130,9 @@ static long gm_ioctl(struct file *filp, unsigned int cmd,
 
 	switch (cmd) {
 	case MEM_CLEAR:
+		mutex_lock(&dev->mutex);
 		memset(dev->mem, 0, GLOBALMEMSIZE);
+		mutex_unlock(&dev->mutex);
 		break;
 	default:
 		GM_PRT_ERR("Unsupport command!\n");
@@ -177,6 +185,7 @@ static int __init gm_init(void)
 	}
 
 	for (cnt = 0; cnt < GLOBALMEMDEVNUM; cnt++) {
+		mutex_init(&gm_dev->mutex);
 		ret = gm_setup_cdev(gm_dev + cnt, cnt);
 		if (ret)
 			goto fail1;
